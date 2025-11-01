@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // Create an axios instance
 const api = axios.create({
-  baseURL: 'http://localhost:5001/api', // Your backend API base URL
+  baseURL: 'https://splitride.onrender.com/api', // Your backend API base URL
   headers: {
     'Content-Type': 'application/json',
   },
