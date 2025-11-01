@@ -1,5 +1,5 @@
 const Ride = require('../models/Ride');
-const User = require('../models/user');
+const User = require('../models/User');
 const { createNotification } = require('./notificationController');
 
 // Helper function (as defined in the plan)
