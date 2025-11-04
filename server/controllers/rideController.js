@@ -301,3 +301,58 @@ exports.getJoinableRides = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+exports.getActiveDriverRide = async (req, res) => {
+  try {
+    const ride = await Ride.findOne({
+      'driver.id': req.user.id,
+      status: 'ongoing'
+    });
+    res.json(ride); // Will be null if no active ride
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.completeRide = async (req, res) => {
+  try {
+    const ride = await Ride.findById(req.params.rideId);
+    const io = req.app.get('io');
+
+    if (!ride) {
+      return res.status(404).json({ error: 'Ride not found' });
+    }
+
+    // Security check: Only the driver of this ride can complete it
+    if (ride.driver.id.toString() !== req.user.id) {
+      return res.status(401).json({ error: 'Not authorized' });
+    }
+
+    ride.status = 'completed';
+    ride.completedAt = Date.now();
+    await ride.save();
+
+    // Notify all passengers that the ride is over
+    const message = `Your ride from ${ride.route.start} to ${ride.route.end} is complete.`;
+
+    ride.passengers.forEach(p => {
+      // Send a socket event to update their UI
+      io.to(p.userId.toString()).emit('ride_completed', { rideId: ride._id });
+      
+      // Send a persistent notification
+      createNotification(
+        io,
+        p.userId,
+        'ride_completed', // You may need to add this to your Notification model enum
+        message,
+        ride._id
+      );
+    });
+
+    res.json({ success: true, message: 'Ride completed' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: error.message });
+  }
+};

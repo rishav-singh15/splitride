@@ -27,4 +27,6 @@ router.post('/approve/:rideId/:requesterId', auth, rideController.approveJoinReq
 router.get('/searching', auth, rideController.getSearchingRides);
 router.get('/active', auth, rideController.getActiveRide);
 router.get('/joinable', auth, rideController.getJoinableRides);
+router.get('/active-driver', auth, rideController.getActiveDriverRide);
+router.post('/complete/:rideId', auth, rideController.completeRide);
 module.exports = router;

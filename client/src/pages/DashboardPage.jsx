@@ -1,89 +1,104 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
-import socket from '../services/socket'; // Import socket
+import socket from '../services/socket';
 
 // Import all our components
 import BookRideForm from '../components/BookRideForm';
 import RideRequestList from '../components/RideRequestList';
 import ActiveRideDisplay from '../components/ActiveRideDisplay';
 import JoinableRidesList from '../components/JoinableRidesList';
+import DriverActiveRide from '../components/DriverActiveRide'; // <-- IMPORT NEW COMPONENT
 
 export default function DashboardPage() {
   const { user } = useAuth();
   const [activeRide, setActiveRide] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // --- THIS IS THE CORRECTED USE-EFFECT ---
+  // This will run when the component loads or the user changes
   useEffect(() => {
-    // We must wait for the user object to be known
     if (!user) {
-      setIsLoading(false); // No user, so not loading
+      setIsLoading(false);
       return;
     }
 
-    if (user.role === 'passenger') {
-      const checkActiveRide = async () => {
+    const checkActiveRide = async () => {
+      let endpoint = '';
+      if (user.role === 'passenger') {
+        endpoint = '/rides/active';
+      } else if (user.role === 'driver') {
+        endpoint = '/rides/active-driver'; // <-- USE OUR NEW DRIVER ENDPOINT
+      }
+
+      if (endpoint) {
         try {
-          const res = await api.get('/rides/active');
+          const res = await api.get(endpoint);
           setActiveRide(res.data); // Will be null if no ride
         } catch (err) {
           console.error('Error fetching active ride', err);
         }
-        setIsLoading(false); // Set loading false *after* check
-      };
-      checkActiveRide();
-    } else {
-      setIsLoading(false); // Driver doesn't need this check
-    }
-  }, [user]); // Dependency is the whole user object
+      }
+      setIsLoading(false);
+    };
+    
+    checkActiveRide();
+  }, [user]);
 
-  // This is the *second* useEffect we added (for Passenger 2)
+  // This is for Passenger 2
   useEffect(() => {
-    // Make sure user is loaded before attaching listeners
-    if (!user) return;
+    if (!user || user.role !== 'passenger') return;
 
     const handleJoinedRide = (data) => {
       if (!activeRide) {
-        api.get('/rides/active').then(res => {
-          setActiveRide(res.data);
-        });
+        api.get('/rides/active').then(res => setActiveRide(res.data));
       }
     };
-    
     socket.on('fare_updated', handleJoinedRide);
+    return () => socket.off('fare_updated', handleJoinedRide);
+  }, [user, activeRide]);
 
-    return () => {
-      socket.off('fare_updated', handleJoinedRide);
+  // This is for Passengers when the ride is completed
+  useEffect(() => {
+    if (!user || user.role !== 'passenger') return;
+
+    const handleRideCompleted = () => {
+      alert('Your ride is complete!');
+      setActiveRide(null); // Clear the active ride, which shows the booking forms again
     };
-  }, [user, activeRide]); // <-- Add user as a dependency
+    socket.on('ride_completed', handleRideCompleted);
+    return () => socket.off('ride_completed', handleRideCompleted);
+  }, [user]);
 
-  if (isLoading) { // Simplified loading check
+
+  if (isLoading || !user) {
     return <div>Loading dashboard...</div>;
   }
 
   // --- DRIVER DASHBOARD ---
-  if (user && user.role === 'driver') {
+  if (user.role === 'driver') {
     return (
       <div>
         <h1 className="mb-6 text-3xl font-bold">Welcome, {user.name}</h1>
-        <h2 className="mb-4 text-2xl">Available Ride Requests</h2>
-        <RideRequestList />
+        {activeRide ? (
+          <DriverActiveRide initialRide={activeRide} onRideComplete={() => setActiveRide(null)} />
+        ) : (
+          <div>
+            <h2 className="mb-4 text-2xl">Available Ride Requests</h2>
+            <RideRequestList />
+          </div>
+        )}
       </div>
     );
   }
 
   // --- PASSENGER DASHBOARD ---
-  if (user && user.role === 'passenger') {
+  if (user.role === 'passenger') {
     return (
       <div>
         <h1 className="mb-6 text-3xl font-bold">Welcome, {user.name}</h1>
-        
         {activeRide ? (
-          // --- 1. Passenger has an active ride ---
           <ActiveRideDisplay initialRide={activeRide} />
         ) : (
-          // --- 2. Passenger does NOT have an active ride ---
           <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
             <div>
               <h2 className="mb-4 text-2xl">Book a New Ride</h2>
@@ -98,6 +113,5 @@ export default function DashboardPage() {
     );
   }
 
-  // If no user (logged out, etc.), render nothing or a redirect
   return null; 
 }
