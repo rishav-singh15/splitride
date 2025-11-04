@@ -7,29 +7,32 @@ require('dotenv').config();
 
 const app = express();
 const server = http.createServer(app);
-// --- Define your allowed origins ---
+
+// --- NEW CORS CONFIG ---
 const allowedOrigins = [
   "http://localhost:5173",
-  "https://splitride-six.vercel.app" // <-- YOUR LIVE VERCEL URL
+  "https://splitride-six.vercel.app" // Your live Vercel frontend
 ];
 
 const corsOptions = {
   origin: function (origin, callback) {
     if (allowedOrigins.indexOf(origin) !== -1 || !origin) {
+      // Allow requests from allowed origins and "no-origin" (like Postman)
       callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));
     }
   },
-  methods: ["GET", "POST", "PUT", "DELETE"] // Allow all methods
+  methods: ["GET", "POST", "PUT", "DELETE"] // Allow all necessary methods
 };
 
 const io = socketIo(server, {
-  cors: corsOptions // Use the same options for Socket.io
+  cors: corsOptions // Apply the same CORS options to Socket.IO
 });
+// --- END OF NEW CONFIG ---
 
 // --- Middleware ---
-app.use(cors(corsOptions)); // Use the options for Express
+app.use(cors(corsOptions)); // Apply CORS options to all Express routes
 app.use(express.json()); // To parse JSON bodies
 
 // --- MongoDB Connection ---
@@ -37,10 +40,10 @@ mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('MongoDB Connected...'))
   .catch(err => console.error(err));
 
-// --- Routes (We will create these next) ---
+// --- Routes ---
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/rides', require('./routes/rides'));
-// app.use('/api/users', require('./routes/users'));
+app.use('/api/notifications', require('./routes/notifications'));
 
 // --- Socket.io Connection ---
 io.on('connection', (socket) => {
@@ -48,13 +51,12 @@ io.on('connection', (socket) => {
   
   socket.on('join_ride', (rideId) => {
     socket.join(rideId);
-    console.log(`Socket ${socket.id} joined room ${rideId}`);
+    console.log(`Socket ${socket.id} joined ride room ${rideId}`);
   });
+
   socket.on('join_user_room', (userId) => {
-    socket.join(userId); 
-    // --- ADD THIS LOGGING LINE ---
+    socket.join(userId);
     console.log(`SUCCESS: Socket ${socket.id} joined USER ROOM ${userId}`);
-    // --- END OF ADDITION ---
   });
 
   socket.on('disconnect', () => {
@@ -62,13 +64,10 @@ io.on('connection', (socket) => {
   });
 });
 
-// Make 'io' accessible to our routes (for emitting events from controllers)
+// Make 'io' accessible to our routes
 app.set('io', io);
 
-app.use('/api/auth', require('./routes/auth'));
-app.use('/api/rides', require('./routes/rides'));
-app.use('/api/notifications', require('./routes/notifications'));
-
 // --- Start Server ---
-const PORT = process.env.PORT || 5000;
+// Render will set its own PORT environment variable
+const PORT = process.env.PORT || 5001; 
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
