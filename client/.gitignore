@@ -1,9 +1,4 @@
-# Dependencies
 /node_modules
-
-# Environment
+/dist
 .env
 .env.*
-
-# Build output
-/dist
