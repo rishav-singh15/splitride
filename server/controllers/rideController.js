@@ -22,36 +22,71 @@ exports.getSearchingRides = async (req, res) => {
 // --- Create new ride (Passenger 1 initiates) ---
 exports.createRide = async (req, res) => {
   try {
-    const { start, end, isShared } = req.body;
-    // --- REAL USER DATA (from auth middleware) ---
-    const userId = req.user.id;
-    const userName = req.user.name;
-    
+    // 1. Get the new data format from Frontend
+    // Frontend sends: { pickup: { coordinates: [...] }, drop: { coordinates: [...] }, ... }
+    const { pickup, drop, seatsRequested, paymentMethod } = req.body;
+    const userId = req.user.id; // Assuming auth middleware sets this
+
+    // 2. Validate input
+    if (!pickup || !drop || !pickup.coordinates || !drop.coordinates) {
+       return res.status(400).json({ error: "Pickup and Drop locations are required with coordinates." });
+    }
+
+    // 3. Create the Ride Object matching the NEW Schema
     const ride = new Ride({
-      route: { start, end },
+      driver: null, // No driver yet
+      route: {
+        start: {
+          name: pickup.name || "Pinned Location",
+          location: {
+            type: "Point",
+            coordinates: pickup.coordinates // [Lng, Lat]
+          }
+        },
+        end: {
+          name: drop.name || "Destination",
+          location: {
+            type: "Point",
+            coordinates: drop.coordinates // [Lng, Lat]
+          }
+        },
+        totalDistance: 0 // We will calculate this when driver accepts or use a helper now
+      },
       passengers: [{
-        userId: userId, // <--- Replaced mock
-        name: userName, // <--- Replaced mock
+        user: userId,
+        pickup: {
+            name: pickup.name || "Pinned Location",
+            coordinates: pickup.coordinates
+        },
+        drop: {
+            name: drop.name || "Destination",
+            coordinates: drop.coordinates
+        },
         status: 'pending',
-        seatNumber: 1
+        seatNumber: 1,
+        fareShare: 0, // Will be calculated when driver accepts/others join
+        distanceTraveled: 0
       }],
       status: 'searching',
       pricing: {
-        baseFare: 0,
-        incrementPerPassenger: 0,
-        currentTotal: 0,
-        perPersonFare: 0
+        baseFare: 0, 
+        currentTotal: 0
       },
-      maxPassengers: isShared ? 3 : 1
+      seatsRequested: seatsRequested || 1
     });
 
     await ride.save();
-    
-    req.app.get('io').emit('new_ride_request', ride);
-    
-    res.status(201).json({ success: true, ride });
+
+    // 4. Emit socket event (optional, if you have drivers listening)
+    const io = req.app.get('io');
+    if (io) {
+        io.emit('new_ride_request', ride);
+    }
+
+    res.json({ success: true, ride });
+
   } catch (error) {
-    console.error(error);
+    console.error("Create Ride Error:", error);
     res.status(500).json({ error: error.message });
   }
 };
