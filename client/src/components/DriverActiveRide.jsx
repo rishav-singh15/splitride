@@ -27,7 +27,6 @@ const DriverActiveRide = () => {
     };
     fetchRide();
 
-    // Listen for passenger updates (new joins)
     socket.emit('join_ride', id);
     socket.on('ride_updated', (updatedRide) => {
         setRide(updatedRide);
@@ -40,27 +39,21 @@ const DriverActiveRide = () => {
 
   const handleStartRide = async () => {
     try {
-      // 1. Verify OTP with Backend
-      // (For MVP, we just check if it matches the ride.safety.otp locally or send to API)
       if (otpInput !== ride.safety?.otp) {
-        alert("Incorrect OTP! Ask passenger for the code.");
+        alert("Incorrect OTP!");
         return;
       }
-
       await api.put(`/rides/${id}/status`, { status: 'ongoing' });
-      // Update local state to reflect change instantly
       setRide(prev => ({ ...prev, status: 'ongoing' }));
-      alert("Ride Started! Drive safely.");
     } catch (err) {
       alert("Error starting ride");
     }
   };
 
   const handleEndRide = async () => {
-    if (window.confirm("Are you sure you want to end this ride?")) {
+    if (window.confirm("End ride?")) {
         try {
             await api.put(`/rides/${id}/status`, { status: 'completed' });
-            alert("Ride Completed! Collecting payment...");
             navigate('/dashboard'); 
         } catch (err) {
             console.error(err);
@@ -68,7 +61,7 @@ const DriverActiveRide = () => {
     }
   };
 
-  if (loading) return <div className="p-10 text-center">Loading Driver Interface...</div>;
+  if (loading) return <div className="p-10 text-center animate-pulse">Loading Navigation...</div>;
   if (!ride) return <div className="p-10 text-center text-red-500">Ride not found</div>;
 
   // --- SAFE COORDINATE PARSING ---
@@ -85,35 +78,33 @@ const DriverActiveRide = () => {
 
   return (
     <div className="max-w-4xl mx-auto p-4 space-y-6">
-      {/* HEADER */}
       <div className="bg-slate-900 text-white p-4 rounded-xl flex justify-between items-center shadow-lg">
         <div>
             <h1 className="text-xl font-bold flex items-center gap-2">
                 <Navigation className="text-green-400" />
                 Driver Navigation
             </h1>
+            {/* 🛑 FIX: Access .name explicitly here too if you add route info */}
             <p className="text-slate-400 text-sm">Ride #{ride._id.slice(-6)}</p>
         </div>
-        <div className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide ${
+        <div className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${
             ride.status === 'ongoing' ? 'bg-green-500 text-white' : 'bg-yellow-500 text-black'
         }`}>
             {ride.status}
         </div>
       </div>
 
-      {/* MAP AREA */}
       <div className="bg-white rounded-xl shadow-md overflow-hidden h-96 border border-slate-200">
          {mapPickup && mapDrop ? (
              <MapComponent pickup={mapPickup} drop={mapDrop} />
          ) : (
-             <div className="h-full flex items-center justify-center text-gray-400">Map Data Unavailable</div>
+             <div className="h-full flex items-center justify-center text-gray-400">
+               Map Unavailable
+             </div>
          )}
       </div>
 
-      {/* ACTION PANEL */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          
-          {/* PASSENGER LIST */}
           <div className="bg-white p-6 rounded-xl shadow-md">
               <h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2">
                   <ShieldCheck className="w-5 h-5 text-indigo-600" />
@@ -123,58 +114,44 @@ const DriverActiveRide = () => {
                   {ride.passengers.map((p, idx) => (
                       <div key={idx} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
                           <div>
-                              <p className="font-bold text-gray-800">{p.name || "Passenger"}</p>
-                              <p className="text-xs text-green-600 font-mono">Paid: ₹{p.fareToPay?.toFixed(0)}</p>
+                              {/* 🛑 FIX: Ensure name is string */}
+                              <p className="font-bold text-gray-800">{p.name || p.user?.name || "Passenger"}</p>
+                              <p className="text-xs text-green-600 font-mono">Collect: ₹{p.fareToPay?.toFixed(0)}</p>
                           </div>
-                          <a href={`tel:${p.phone || ''}`} className="bg-green-100 p-2 rounded-full text-green-600">
-                              <Phone size={16} />
-                          </a>
                       </div>
                   ))}
               </div>
           </div>
 
-          {/* CONTROLS (OTP & START/END) */}
           <div className="bg-white p-6 rounded-xl shadow-md flex flex-col justify-between">
-              
-              {ride.status === 'searching' || ride.status === 'scheduled' || ride.status === 'ongoing' ? (
+              {ride.status !== 'completed' ? (
                   <>
                     {ride.status !== 'ongoing' && (
                         <div className="mb-4">
                             <label className="block text-sm font-bold text-gray-600 mb-2">
-                                Enter Passenger OTP to Start
+                                Enter Passenger OTP
                             </label>
                             <input 
                                 type="text" 
-                                placeholder="4-Digit OTP"
+                                placeholder="4-Digit Code"
                                 value={otpInput}
                                 onChange={(e) => setOtpInput(e.target.value)}
-                                className="w-full text-center text-2xl font-mono tracking-[1em] p-3 border-2 border-gray-200 rounded-lg focus:border-indigo-500 outline-none"
+                                className="w-full text-center text-2xl font-mono tracking-[1em] p-3 border-2 border-gray-200 rounded-lg outline-none"
                                 maxLength={4}
                             />
                         </div>
                     )}
-
-                    {ride.status !== 'ongoing' ? (
-                        <button 
-                            onClick={handleStartRide}
-                            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-xl shadow-lg transition-all"
-                        >
-                            VERIFY & START RIDE
-                        </button>
-                    ) : (
-                        <button 
-                            onClick={handleEndRide}
-                            className="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-4 rounded-xl shadow-lg transition-all animate-pulse"
-                        >
-                            COMPLETE RIDE
-                        </button>
-                    )}
+                    <button 
+                        onClick={ride.status === 'ongoing' ? handleEndRide : handleStartRide}
+                        className={`w-full font-bold py-4 rounded-xl shadow-lg transition-all ${
+                            ride.status === 'ongoing' ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                        }`}
+                    >
+                        {ride.status === 'ongoing' ? 'COMPLETE RIDE' : 'START RIDE'}
+                    </button>
                   </>
               ) : (
-                  <div className="text-center text-gray-500">
-                      Ride Completed
-                  </div>
+                  <div className="text-center text-gray-500">Ride Completed</div>
               )}
           </div>
       </div>

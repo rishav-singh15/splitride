@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import api from '../services/api';
 import { useNavigate } from 'react-router-dom';
-import { MapPin, ArrowRight, Users, Clock } from 'lucide-react';
+import { MapPin, ArrowRight, Users, Clock, AlertCircle } from 'lucide-react';
 
 const JoinableRidesList = () => {
   const [rides, setRides] = useState([]);
@@ -22,7 +22,7 @@ const JoinableRidesList = () => {
     fetchRides();
   }, []);
 
-  if (loading) return <div className="p-8 text-center animate-pulse">Scanning for nearby rides...</div>;
+  if (loading) return <div className="p-8 text-center animate-pulse text-gray-500">Scanning for nearby rides...</div>;
 
   return (
     <div className="max-w-2xl mx-auto space-y-4 p-4">
@@ -32,18 +32,19 @@ const JoinableRidesList = () => {
       
       {rides.length === 0 ? (
           <div className="text-center text-gray-500 py-10 bg-gray-50 rounded-xl border border-dashed border-gray-300">
-              No active rides found nearby.
+              <p>No active rides found nearby.</p>
+              <p className="text-sm mt-2">Waiting for passengers...</p>
           </div>
       ) : (
           rides.map(ride => (
             <div key={ride._id} className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
                 <div className="flex justify-between items-start">
                     <div className="space-y-3">
-                        {/* 🛑 THE FIX IS HERE: Access .name explicitly */}
+                        {/* 🛑 FIX: Explicitly access .name to prevent Object Rendering Crash */}
                         <div className="flex items-center gap-2 text-gray-700">
                             <MapPin size={16} className="text-green-500" />
                             <span className="font-medium">
-                                {ride.route?.start?.name || "Pinned Location"}
+                                {ride.route?.start?.name || "Start Location"}
                             </span>
                         </div>
                         <div className="pl-1">
