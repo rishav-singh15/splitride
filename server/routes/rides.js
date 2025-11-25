@@ -3,36 +3,56 @@ const router = express.Router();
 const rideController = require('../controllers/rideController');
 const auth = require('../middleware/auth');
 
-// --- 1. NEW ROUTES (Required for the Fixes) ---
+// =================================================================
+// 🚨 IMPORTANT: SPECIFIC ROUTES MUST COME FIRST
+// =================================================================
 
-// Get all rides waiting for a driver (For JoinableRidesList.jsx)
+// 1. Get available/searching rides (For Driver List)
 router.get('/available', auth, rideController.getAvailableRides);
+router.get('/searching', auth, rideController.getAvailableRides); // Alias for legacy code
 
-// Get a specific ride by ID (For ActiveRideDisplay.jsx & DriverActiveRide.jsx)
-// 🚨 IMPORTANT: This must be placed AFTER specific routes like /available, /searching, etc.
-// If placed before, it would trap "available" as an "id"
-router.get('/:id', auth, rideController.getRideById); 
-
-
-// --- 2. EXISTING ROUTES (Kept from your code) ---
-
-// @route   POST api/rides/create
-router.post('/create', auth, rideController.createRide);
-
-// @route   POST api/rides/accept/:rideId
-router.post('/accept/:rideId', auth, rideController.acceptRide);
-
-// @route   POST api/rides/join/:rideId
-router.post('/join/:rideId', auth, rideController.requestJoinRide);
-
-// @route   POST api/rides/approve/:rideId/:requesterId
-router.post('/approve/:rideId/:requesterId', auth, rideController.approveJoinRequest);
-
-// Legacy/Other Routes (Kept safe)
-router.get('/searching', auth, rideController.getSearchingRides);
+// 2. Get active ride for current user (For Passenger Dashboard)
 router.get('/active', auth, rideController.getActiveRide);
-router.get('/joinable', auth, rideController.getJoinableRides);
+
+// 3. Get active ride for driver (For Driver Dashboard)
 router.get('/active-driver', auth, rideController.getActiveDriverRide);
+
+// 4. Legacy/Other specific routes
+router.get('/joinable', auth, rideController.getJoinableRides);
+
+
+// =================================================================
+// 📝 ACTION ROUTES (POST/PUT)
+// =================================================================
+router.post('/create', auth, rideController.createRide);
+router.post('/accept/:rideId', auth, rideController.acceptRide);
+router.post('/join/:rideId', auth, rideController.requestJoinRide);
+router.post('/approve/:rideId/:requesterId', auth, rideController.approveJoinRequest);
 router.post('/complete/:rideId', auth, rideController.completeRide);
+
+// Status update (used by Driver to start/end ride)
+router.put('/:id/status', auth, async (req, res) => {
+    try {
+        const Ride = require('../models/Ride');
+        const { status } = req.body;
+        const ride = await Ride.findByIdAndUpdate(req.params.id, { status }, { new: true });
+        
+        // Notify via socket
+        const io = req.app.get('io');
+        io.to(req.params.id).emit('ride_updated', ride);
+        
+        res.json(ride);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+
+// =================================================================
+// ⚠️ WILDCARD ROUTE (MUST BE LAST)
+// =================================================================
+// This matches ANYTHING not matched above.
+// If you put /searching below this, it will fail.
+router.get('/:id', auth, rideController.getRideById); 
 
 module.exports = router;
