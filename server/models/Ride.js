@@ -6,7 +6,8 @@ const RideSchema = new mongoose.Schema({
     ref: 'User',
     default: null
   },
-  // --- UPDATED SECTION: GEOJSON SUPPORT ---
+  
+  // --- GEOJSON SUPPORT ---
   route: {
     start: {
       name: { type: String, required: true },
@@ -16,7 +17,7 @@ const RideSchema = new mongoose.Schema({
       }
     },
     end: {
-      name: { type: String, required: true },
+      name: { type: String, required: true }, 
       location: {
         type: { type: String, default: 'Point' },
         coordinates: { type: [Number], required: true }
@@ -24,14 +25,12 @@ const RideSchema = new mongoose.Schema({
     },
     totalDistance: { type: Number, default: 0 } // In km
   },
-  // ----------------------------------------
   
   passengers: [{
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-    // We also store P&D for each passenger for the algorithm
     pickup: {
       name: String,
-      coordinates: [Number]
+      coordinates: [Number] 
     },
     drop: {
       name: String,
@@ -41,13 +40,31 @@ const RideSchema = new mongoose.Schema({
     status: { 
       type: String, 
       enum: ['pending', 'approved', 'rejected', 'picked_up', 'dropped_off'],
-      default: 'pending' 
+      default: 'approved' 
     },
-    fareShare: Number,        
-    distanceTraveled: Number 
+    fareShare: { type: Number, default: 0 },      
+    distanceTraveled: { type: Number, default: 0 } 
   }],
 
-  seatsRequested: { type: Number, default: 1 },
+  // --- RESTORED: Join Request Persistence ---
+  approvals: [{
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    pickup: {
+      name: String,
+      coordinates: [Number]
+    },
+    drop: {
+      name: String,
+      coordinates: [Number]
+    },
+    status: { 
+      type: String, 
+      enum: ['pending', 'rejected'], 
+      default: 'pending' 
+    }
+  }],
+
+  maxPassengers: { type: Number, default: 3 }, 
 
   status: {
     type: String,
@@ -62,11 +79,12 @@ const RideSchema = new mongoose.Schema({
   
   safety: {
     otp: { type: String }, 
-    isVerified: { type: Boolean, default: false }
+    isVerified: { type: Boolean, default: false },
+    shareToken: { type: String }
   }
 }, { timestamps: true });
 
-// Important: Create Index for Geospatial queries (finding rides near me)
+// Index for Geospatial queries (Essential for "Find Rides Near Me")
 RideSchema.index({ "route.start.location": "2dsphere" });
 
 module.exports = mongoose.model('Ride', RideSchema);
