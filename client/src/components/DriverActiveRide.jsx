@@ -16,6 +16,7 @@ const DriverActiveRide = () => {
     const fetchRide = async () => {
       try {
         const res = await api.get(`/rides/${id}`);
+        console.log("DRIVER RIDE DATA:", res.data); // check console
         setRide(res.data);
       } catch (err) {
         console.error("Ride Load Error:", err);
@@ -58,28 +59,24 @@ const DriverActiveRide = () => {
     }
   };
 
-  if (loading) return <div className="p-10 text-center animate-pulse">Loading...</div>;
+  if (loading) return <div className="p-10 text-center animate-pulse">Loading Driver Interface V2...</div>;
   if (!ride) return <div className="p-10 text-center text-red-500">Ride not found</div>;
 
-  // --- 🛡️ SAFETY EXTRACTION BLOCK ---
-  // We extract all strings HERE. If data is bad, it becomes empty string.
-  // This prevents the "Object with keys" error in the JSX.
-  
-  const rideIdDisplay = ride._id ? ride._id.slice(-6) : "---";
-  const rideStatus = ride.status || "unknown";
-  
-  // Safe Route Names
-  const startLocationName = ride.route?.start?.name || "Start Location";
-  const endLocationName = ride.route?.end?.name || "Destination";
-  
-  // Safe Coordinates
+  // --- 🛡️ SAFETY SANITIZATION (The Fix) ---
+  // 1. Extract strings safely. If it's an object, we take the .name property.
+  const startName = ride.route?.start?.name || "Start Location";
+  const endName = ride.route?.end?.name || "Destination";
+  const rideIdShort = ride._id.substring(ride._id.length - 6);
+  const status = ride.status || "unknown";
+
+  // 2. Prepare Map Coordinates safely
   const getCoords = (pt) => (pt?.location?.coordinates || pt?.coordinates || null);
   const startCoords = getCoords(ride.route?.start);
   const endCoords = getCoords(ride.route?.end);
   
   const mapPickup = startCoords ? { lat: startCoords[1], lng: startCoords[0] } : null;
   const mapDrop = endCoords ? { lat: endCoords[1], lng: endCoords[0] } : null;
-  // ----------------------------------
+  // ------------------------------------------
 
   return (
     <div className="max-w-4xl mx-auto p-4 space-y-6">
@@ -88,21 +85,27 @@ const DriverActiveRide = () => {
         <div>
             <h1 className="text-xl font-bold flex items-center gap-2">
                 <Navigation className="text-green-400" />
-                Driver Navigation
+                Driver Panel v2.0
             </h1>
-            <p className="text-slate-400 text-sm">Ride #{rideIdDisplay}</p>
+            <p className="text-slate-400 text-sm">Ride #{rideIdShort}</p>
         </div>
         <div className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide ${
-            rideStatus === 'ongoing' ? 'bg-green-500 text-white' : 'bg-yellow-500 text-black'
+            status === 'ongoing' ? 'bg-green-500 text-white' : 'bg-yellow-500 text-black'
         }`}>
-            {rideStatus}
+            {status}
         </div>
       </div>
 
       {/* MAP AREA */}
       <div className="bg-white rounded-xl shadow-md overflow-hidden h-96 border border-slate-200">
          {mapPickup && mapDrop ? (
-             <MapComponent pickup={mapPickup} drop={mapDrop} />
+             <MapComponent 
+                pickup={mapPickup} 
+                drop={mapDrop}
+                // IMPORTANT: Pass dummy functions to prevent MapComponent crash on click
+                setPickup={() => {}} 
+                setDrop={() => {}} 
+             />
          ) : (
              <div className="h-full flex items-center justify-center text-gray-400">
                 Map Data Loading...
@@ -114,12 +117,14 @@ const DriverActiveRide = () => {
       <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-100">
           <div className="flex items-center gap-2">
               <MapPin size={16} className="text-green-500" />
-              <span className="font-medium text-gray-700">{startLocationName}</span>
+              {/* WE USE THE SANITIZED STRING HERE */}
+              <span className="font-medium text-gray-700">{startName}</span>
           </div>
           <div className="h-px bg-gray-300 w-10"></div>
           <div className="flex items-center gap-2">
               <MapPin size={16} className="text-red-500" />
-              <span className="font-medium text-gray-700">{endLocationName}</span>
+              {/* WE USE THE SANITIZED STRING HERE */}
+              <span className="font-medium text-gray-700">{endName}</span>
           </div>
       </div>
 
@@ -134,8 +139,9 @@ const DriverActiveRide = () => {
               </h3>
               <div className="space-y-3">
                   {(ride.passengers || []).map((p, idx) => {
+                      // Safety: Ensure we render strings
                       const pName = p.name || p.user?.name || "Passenger";
-                      const pFare = p.fareToPay?.toFixed(0) || "0";
+                      const pFare = p.fareToPay ? p.fareToPay.toFixed(0) : "0";
                       
                       return (
                           <div key={idx} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
@@ -154,9 +160,9 @@ const DriverActiveRide = () => {
 
           {/* CONTROLS */}
           <div className="bg-white p-6 rounded-xl shadow-md flex flex-col justify-between">
-              {rideStatus === 'searching' || rideStatus === 'scheduled' || rideStatus === 'ongoing' ? (
+              {status === 'searching' || status === 'scheduled' || status === 'ongoing' ? (
                   <>
-                    {rideStatus !== 'ongoing' && (
+                    {status !== 'ongoing' && (
                         <div className="mb-4">
                             <label className="block text-sm font-bold text-gray-600 mb-2">
                                 Enter Passenger OTP
@@ -173,12 +179,12 @@ const DriverActiveRide = () => {
                     )}
 
                     <button 
-                        onClick={rideStatus === 'ongoing' ? handleEndRide : handleStartRide}
+                        onClick={status === 'ongoing' ? handleEndRide : handleStartRide}
                         className={`w-full font-bold py-4 rounded-xl shadow-lg transition-all ${
-                            rideStatus === 'ongoing' ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                            status === 'ongoing' ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-indigo-600 hover:bg-indigo-700 text-white'
                         }`}
                     >
-                        {rideStatus === 'ongoing' ? 'COMPLETE RIDE' : 'START RIDE'}
+                        {status === 'ongoing' ? 'COMPLETE RIDE' : 'START RIDE'}
                     </button>
                   </>
               ) : (
