@@ -1,56 +1,72 @@
 const mongoose = require('mongoose');
-const Schema = mongoose.Schema;
 
-const PassengerSchema = new Schema({
-  userId: { type: Schema.Types.ObjectId, ref: 'User' },
-  name: { type: String },
-  joinedAt: { type: Date, default: Date.now },
-  status: { 
-    type: String, 
-    enum: ['pending', 'approved', 'paid', 'cancelled'], 
-    default: 'pending' 
-  },
-  fareToPay: { type: Number, default: 0 },
-  seatNumber: { type: Number }
-});
-
-const ApprovalSchema = new Schema({
-  requestedBy: { type: Schema.Types.ObjectId, ref: 'User' },
-  approvedBy: [{ type: Schema.Types.ObjectId, ref: 'User' }],
-  status: { 
-    type: String, 
-    enum: ['pending', 'approved', 'rejected'], 
-    default: 'pending' 
-  }
-});
-
-const RideSchema = new Schema({
+const RideSchema = new mongoose.Schema({
   driver: {
-    id: { type: Schema.Types.ObjectId, ref: 'User' },
-    name: { type: String },
-    vehicle: { type: Object }
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
   },
+  // --- UPDATED SECTION: GEOJSON SUPPORT ---
   route: {
-    start: { type: String, required: true },
-    end: { type: String, required: true },
-    distance: { type: Number } // in km
+    start: {
+      name: { type: String, required: true },
+      location: {
+        type: { type: String, default: 'Point' },
+        coordinates: { type: [Number], required: true } // [Longitude, Latitude]
+      }
+    },
+    end: {
+      name: { type: String, required: true },
+      location: {
+        type: { type: String, default: 'Point' },
+        coordinates: { type: [Number], required: true }
+      }
+    },
+    totalDistance: { type: Number, default: 0 } // In km
   },
-  pricing: {
-    baseFare: { type: Number, required: true, default: 0 },
-    incrementPerPassenger: { type: Number, required: true, default: 0 },
-    currentTotal: { type: Number, default: 0 },
-    perPersonFare: { type: Number, default: 0 }
-  },
-  passengers: [PassengerSchema],
+  // ----------------------------------------
+  
+  passengers: [{
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    // We also store P&D for each passenger for the algorithm
+    pickup: {
+      name: String,
+      coordinates: [Number]
+    },
+    drop: {
+      name: String,
+      coordinates: [Number]
+    },
+    seatNumber: Number,
+    status: { 
+      type: String, 
+      enum: ['pending', 'approved', 'rejected', 'picked_up', 'dropped_off'],
+      default: 'pending' 
+    },
+    fareShare: Number,        
+    distanceTraveled: Number 
+  }],
+
+  seatsRequested: { type: Number, default: 1 },
+
   status: {
     type: String,
-    enum: ['searching', 'ongoing', 'completed', 'cancelled'],
+    enum: ['searching', 'scheduled', 'ongoing', 'completed', 'cancelled'],
     default: 'searching'
   },
-  maxPassengers: { type: Number, default: 3 },
-  approvals: [ApprovalSchema],
-  createdAt: { type: Date, default: Date.now },
-  completedAt: { type: Date }
-});
+  
+  pricing: {
+    baseFare: { type: Number, default: 0 },
+    currentTotal: { type: Number, default: 0 }
+  },
+  
+  safety: {
+    otp: { type: String }, 
+    isVerified: { type: Boolean, default: false }
+  }
+}, { timestamps: true });
+
+// Important: Create Index for Geospatial queries (finding rides near me)
+RideSchema.index({ "route.start.location": "2dsphere" });
 
 module.exports = mongoose.model('Ride', RideSchema);
