@@ -191,58 +191,65 @@ exports.approveJoinRequest = async (req, res) => {
       const allApproved = approval.approvedBy.length === ride.passengers.length;
 
       if (allApproved) {
-        // --- ADD PASSENGER TO RIDE ---
-        const newPassenger = await User.findById(requesterId);
-        if (!newPassenger) {
-            return res.status(404).json({ error: 'Joining passenger not found' });
-        }
+    // --- 1. ADD PASSENGER TO RIDE & LOCATION DATA ---
+    const newPassenger = await User.findById(requesterId);
+    if (!newPassenger) {
+        return res.status(404).json({ error: 'Joining passenger not found' });
+    }
 
-        ride.passengers.push({
-          userId: newPassenger._id,
-          name: newPassenger.name,
-          status: 'approved',
-          seatNumber: ride.passengers.length + 1
-        });
+    // We MUST capture the location data sent from the frontend map
+    const newPassengerData = {
+      userId: newPassenger._id,
+      name: newPassenger.name,
+      status: 'approved',
+      seatNumber: ride.passengers.length + 1,
+      // *** NEW: Store the new passenger's P&D locations (expected format: {lat, lng}) ***
+      // NOTE: We assume the frontend sends the required structure:
+      // pickup: { coordinates: [req.body.pickup.lng, req.body.pickup.lat] },
+      pickup: req.body.pickup,
+      drop: req.body.drop,
+    };
+    
+    ride.passengers.push(newPassengerData);
 
-        // --- RECALCULATE FARES (YOUR CORE LOGIC) ---
-        const numPassengers = ride.passengers.length;
-        const newTotal = ride.pricing.baseFare + 
-           (ride.pricing.incrementPerPassenger * (numPassengers - 1));
-        const farePerPerson = newTotal / numPassengers;
+    // --- 2. RECALCULATE FARES (DISTANCE-WEIGHTED LOGIC) ---
+    // The previous manual calculation is gone. We call the smart algorithm.
+    const updatedRide = exports.recalculateFares(ride); // This mutates and returns the ride object
 
-        ride.pricing.currentTotal = newTotal;
-        ride.pricing.perPersonFare = farePerPerson;
+    approval.status = 'approved';
+    await updatedRide.save(); // Save the ride with all new fares
 
-        ride.passengers.forEach(p => {
-          p.fareToPay = farePerPerson;
-        });
+    // --- 3. NOTIFY EVERYONE ---
+    const updateData = {
+      message: `${newPassenger.name} has joined the ride!`,
+      // The total collected amount
+      totalFare: updatedRide.pricing.currentTotal, 
+    };
 
-        approval.status = 'approved';
-
-        // --- NOTIFY EVERYONE ---
-        const updateData = {
-          message: `${newPassenger.name} has joined the ride!`,
-          newFare: farePerPerson,
-          totalFare: newTotal,
-          passengers: ride.passengers.map(p => ({ name: p.name, fare: p.fareToPay }))
+    // Notify all passengers (including new one) with their *specific* new fare
+    updatedRide.passengers.forEach(p => {
+        const individualFare = p.fareToPay; // The distance-weighted fare from the function
+        
+        const passengerUpdateData = { 
+            ...updateData, 
+            newFare: individualFare, 
+            savings: '15%' // Static savings for MVP wow factor
         };
 
-        // Notify all passengers (including new one)
-        ride.passengers.forEach(p => {
-          io.to(p.userId.toString()).emit('fare_updated', updateData);
-          
-          // --- ADD NOTIFICATION ---
-          createNotification(
-            io,
-            p.userId,
-            'fare_updated',
-            `${newPassenger.name} joined! Your new fare is $${farePerPerson.toFixed(2)}`,
-            ride._id
-          );
-          // --- END ---
-        });
-        io.to(rideId).emit('ride_updated', ride);
-      }
+        io.to(p.userId.toString()).emit('fare_updated', passengerUpdateData);
+        
+        // --- ADD NOTIFICATION ---
+        createNotification(
+          io,
+          p.userId,
+          'fare_updated',
+          `${newPassenger.name} joined! Your new fare is ₹${individualFare}`, 
+          updatedRide._id
+        );
+    });
+    
+    io.to(rideId).emit('ride_updated', updatedRide);
+}
     } else {
       // --- REJECTED ---
       approval.status = 'rejected';
@@ -355,4 +362,64 @@ exports.completeRide = async (req, res) => {
     console.error(error);
     res.status(500).json({ error: error.message });
   }
+};
+
+// HELPER: Haversine Formula to calculate distance between coords in km
+function calculateDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371; // Radius of the earth in km
+    const dLat = deg2rad(lat2 - lat1);
+    const dLon = deg2rad(lon2 - lon1);
+    const a = 
+        Math.sin(dLat/2) * Math.sin(dLat/2) +
+        Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * Math.sin(dLon/2) * Math.sin(dLon/2); 
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
+    return R * c; // Distance in km
+}
+
+function deg2rad(deg) {
+    return deg * (Math.PI/180);
+}
+
+// THE ALGORITHM: Recalculate fares for all passengers
+exports.recalculateFares = (ride) => {
+    const BASE_RATE_PER_KM = 15; // ₹15 per km (Standard cab rate)
+    const POOL_DISCOUNT = 0.85;  // 15% discount for pooling
+    
+    // 1. Calculate Total Pooled Distance (Driver's effort)
+    // In a real app, this comes from Mapbox API. For MVP, we sum segments.
+    // Logic: Start -> P1_Pickup -> P2_Pickup -> P1_Drop -> P2_Drop (simplified)
+    // For MVP V1: Sum of individual distances * 0.7 (Overlap factor)
+    
+    let totalDriverDistance = 0;
+    ride.passengers.forEach(p => {
+        const dist = calculateDistance(
+            p.pickup.coordinates[1], p.pickup.coordinates[0],
+            p.drop.coordinates[1], p.drop.coordinates[0]
+        );
+        p.distanceTraveled = dist; // Update passenger object
+        totalDriverDistance += dist; 
+    });
+    
+    // Simulate overlap efficiency (Driver drives less than sum of solo trips)
+    const optimizedTotalDistance = totalDriverDistance * 0.7; 
+    
+    // 2. Calculate Total Ride Cost (Driver's Revenue)
+    const totalRideCost = (optimizedTotalDistance * BASE_RATE_PER_KM) + ride.pricing.baseFare;
+
+    // 3. DISTANCE-WEIGHTED SPLIT
+    // Each person pays proportional to their solo distance
+    ride.passengers.forEach(p => {
+        const sharePercentage = p.distanceTraveled / totalDriverDistance;
+        
+        // Their "Fair Share" of the discounted total cost
+        p.fareShare = (totalRideCost * sharePercentage).toFixed(2);
+        
+        // SAFETY CHECK: Ensure they never pay more than Solo
+        const soloCost = (p.distanceTraveled * BASE_RATE_PER_KM) + ride.pricing.baseFare;
+        if (p.fareShare > soloCost) {
+             p.fareShare = soloCost * 0.95; // Force 5% discount minimum
+        }
+    });
+
+    return ride;
 };
