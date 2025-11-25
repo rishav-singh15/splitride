@@ -1,15 +1,26 @@
 import io from 'socket.io-client';
 
 // Connect to your backend server
-// Make sure this port matches your backend's port (5001)
-const socket = io('https://splitride.onrender.com');
+// ⚠️ IMPORTANT: If you are running locally, change to 'http://localhost:5000'
+const SOCKET_URL = 'https://splitride.onrender.com';
+
+const socket = io(SOCKET_URL, {
+  transports: ['websocket'], // Forces modern WebSocket connection (faster)
+  reconnection: true,        // Keep trying to connect if internet drops
+  reconnectionAttempts: 10,  // Try 10 times before giving up
+  reconnectionDelay: 3000,   // Wait 3s between attempts
+});
 
 socket.on('connect', () => {
-  console.log('Socket.io connected:', socket.id);
+  console.log('🟢 Socket connected:', socket.id);
+});
+
+socket.on('connect_error', (err) => {
+  console.error('🔴 Socket connection error:', err.message);
 });
 
 socket.on('disconnect', () => {
-  console.log('Socket.io disconnected');
+  console.log('Rx Socket disconnected');
 });
 
 export default socket;

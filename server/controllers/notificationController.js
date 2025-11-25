@@ -1,9 +1,9 @@
 const Notification = require('../models/Notification');
 
-// --- Helper function to create a notification ---
-// We'll import this into rideController
+// --- Helper: Create & Emit Notification ---
 exports.createNotification = async (io, userId, type, message, rideId) => {
   try {
+    // 1. Save to DB
     const notification = new Notification({
       userId,
       type,
@@ -12,22 +12,25 @@ exports.createNotification = async (io, userId, type, message, rideId) => {
     });
     await notification.save();
 
-    // --- EMIT REAL-TIME EVENT ---
-    // We send this to the user's private room so they get a live update
-    io.to(userId.toString()).emit('new_notification', notification);
+    // 2. Emit Real-time Event (if Socket.io instance is provided)
+    if (io) {
+        // Emit to the specific user's room (userId)
+        io.to(userId.toString()).emit('new_notification', notification);
+    }
 
   } catch (err) {
     console.error('Error creating notification:', err.message);
+    // We don't crash the request here, just log the error
   }
 };
 
-// --- Get all unread notifications for a user ---
+// --- Get Unread Notifications ---
 exports.getNotifications = async (req, res) => {
   try {
     const notifications = await Notification.find({
       userId: req.user.id,
       read: false
-    }).sort({ createdAt: -1 });
+    }).sort({ createdAt: -1 }); // Newest first
     
     res.json(notifications);
   } catch (err) {
@@ -36,7 +39,7 @@ exports.getNotifications = async (req, res) => {
   }
 };
 
-// --- Mark a notification as read ---
+// --- Mark as Read ---
 exports.markAsRead = async (req, res) => {
   try {
     const notification = await Notification.findById(req.params.id);
@@ -44,7 +47,8 @@ exports.markAsRead = async (req, res) => {
     if (!notification) {
       return res.status(404).json({ error: 'Notification not found' });
     }
-    // Ensure the notification belongs to the user
+
+    // Authorization check
     if (notification.userId.toString() !== req.user.id) {
       return res.status(401).json({ error: 'Not authorized' });
     }

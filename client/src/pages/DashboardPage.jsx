@@ -1,117 +1,115 @@
-import React, { useState, useEffect } from 'react';
-import { useAuth } from '../context/AuthContext';
+import React, { createContext, useState, useEffect, useContext } from 'react';
 import api from '../services/api';
-import socket from '../services/socket';
 
-// Import all our components
-import BookRideForm from '../components/BookRideForm';
-import RideRequestList from '../components/RideRequestList';
-import ActiveRideDisplay from '../components/ActiveRideDisplay';
-import JoinableRidesList from '../components/JoinableRidesList';
-import DriverActiveRide from '../components/DriverActiveRide'; // <-- IMPORT NEW COMPONENT
+// 1. Create the Context
+const AuthContext = createContext();
 
-export default function DashboardPage() {
-  const { user } = useAuth();
-  const [activeRide, setActiveRide] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
+// 2. Create the Provider
+export const AuthProvider = ({ children }) => {
+  const [user, setUser] = useState(null);
+  const [token, setToken] = useState(localStorage.getItem('token'));
+  const [loading, setLoading] = useState(true);
 
-  // This will run when the component loads or the user changes
+  // 3. Effect to load user on app start
   useEffect(() => {
-    if (!user) {
-      setIsLoading(false);
-      return;
-    }
-
-    const checkActiveRide = async () => {
-      let endpoint = '';
-      if (user.role === 'passenger') {
-        endpoint = '/rides/active';
-      } else if (user.role === 'driver') {
-        endpoint = '/rides/active-driver'; // <-- USE OUR NEW DRIVER ENDPOINT
+    const loadUser = async () => {
+      // OPTIMIZATION: Check if we have user data in local storage first
+      // This makes the UI load instantly without waiting for the server
+      const storedUser = localStorage.getItem('user');
+      if (storedUser) {
+          setUser(JSON.parse(storedUser));
       }
 
-      if (endpoint) {
+      if (token) {
         try {
-          const res = await api.get(endpoint);
-          setActiveRide(res.data); // Will be null if no ride
+          // Verify token validity with server
+          const res = await api.get('/auth'); 
+          setUser(res.data);
+          // Sync fresh server data to local storage
+          localStorage.setItem('user', JSON.stringify(res.data));
         } catch (err) {
-          console.error('Error fetching active ride', err);
+          console.error('Session expired', err);
+          logout(); // Auto-logout if token is invalid
         }
       }
-      setIsLoading(false);
+      setLoading(false);
     };
-    
-    checkActiveRide();
-  }, [user]);
 
-  // This is for Passenger 2
-  useEffect(() => {
-    if (!user || user.role !== 'passenger') return;
+    loadUser();
+  }, [token]);
 
-    const handleJoinedRide = (data) => {
-      if (!activeRide) {
-        api.get('/rides/active').then(res => setActiveRide(res.data));
+  // 4. Login Function
+  const login = async (email, password) => {
+    try {
+      const res = await api.post('/auth/login', { email, password });
+      
+      // 🛑 CRITICAL UPDATE: Save both Token AND User to LocalStorage
+      localStorage.setItem('token', res.data.token);
+      localStorage.setItem('user', JSON.stringify(res.data.user));
+      
+      setToken(res.data.token);
+      setUser(res.data.user);
+      return true;
+    } catch (err) {
+      if (err.response) {
+        console.error('Login failed:', err.response.data.error);
+        throw new Error(err.response.data.error); // Throw to UI
+      } else {
+        console.error('Login failed:', err.message);
+        throw new Error("Network error. Check connection.");
       }
-    };
-    socket.on('fare_updated', handleJoinedRide);
-    return () => socket.off('fare_updated', handleJoinedRide);
-  }, [user, activeRide]);
+    }
+  };
 
-  // This is for Passengers when the ride is completed
-  useEffect(() => {
-    if (!user || user.role !== 'passenger') return;
+  // 5. Register Function
+  const register = async (userData) => {
+    try {
+      const res = await api.post('/auth/register', userData);
+      
+      // 🛑 CRITICAL UPDATE: Save both Token AND User
+      localStorage.setItem('token', res.data.token);
+      localStorage.setItem('user', JSON.stringify(res.data.user));
+      
+      setToken(res.data.token);
+      setUser(res.data.user);
+      return true;
+    } catch (err) {
+      if (err.response) {
+        console.error('Registration failed:', err.response.data.error);
+        throw new Error(err.response.data.error);
+      } else {
+        console.error('Registration failed:', err.message);
+        throw new Error("Network error. Check connection.");
+      }
+    }
+  };
 
-    const handleRideCompleted = () => {
-      alert('Your ride is complete!');
-      setActiveRide(null); // Clear the active ride, which shows the booking forms again
-    };
-    socket.on('ride_completed', handleRideCompleted);
-    return () => socket.off('ride_completed', handleRideCompleted);
-  }, [user]);
+  // 6. Logout Function
+  const logout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user'); // Clean up user data too
+    setToken(null);
+    setUser(null);
+  };
 
+  // 7. Value to be passed to consuming components
+  const value = {
+    user,
+    token,
+    loading,
+    login,
+    register,
+    logout,
+  };
 
-  if (isLoading || !user) {
-    return <div>Loading dashboard...</div>;
-  }
+  return (
+    <AuthContext.Provider value={value}>
+      {!loading && children}
+    </AuthContext.Provider>
+  );
+};
 
-  // --- DRIVER DASHBOARD ---
-  if (user.role === 'driver') {
-    return (
-      <div>
-        <h1 className="mb-6 text-3xl font-bold">Welcome, {user.name}</h1>
-        {activeRide ? (
-          <DriverActiveRide initialRide={activeRide} onRideComplete={() => setActiveRide(null)} />
-        ) : (
-          <div>
-            <h2 className="mb-4 text-2xl">Available Ride Requests</h2>
-            <RideRequestList />
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // --- PASSENGER DASHBOARD ---
-  if (user.role === 'passenger') {
-    return (
-      <div>
-        <h1 className="mb-6 text-3xl font-bold">Welcome, {user.name}</h1>
-        {activeRide ? (
-          <ActiveRideDisplay initialRide={activeRide} />
-        ) : (
-          <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
-            <div>
-              <h2 className="mb-4 text-2xl">Book a New Ride</h2>
-              <BookRideForm />
-            </div>
-            <div>
-              <JoinableRidesList />
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  return null; 
-}
+// 8. Custom hook
+export const useAuth = () => {
+  return useContext(AuthContext);
+};

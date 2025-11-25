@@ -4,7 +4,6 @@ import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
 // --- CUSTOM MARKER ICONS (Visual Credibility) ---
-// Using raw.githubusercontent for reliable colored markers
 const leafGreen = new L.Icon({
     iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
     shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
@@ -23,32 +22,50 @@ const leafRed = new L.Icon({
     shadowSize: [41, 41]
 });
 
-// Component to handle clicks on map
+// 1. Handle Clicks
 function LocationSelector({ setLocation, mode, setMode }) {
     useMapEvents({
         click(e) {
-            const { lat, lng } = e.latlng;
-            setLocation({ lat, lng });
-            
-            // UX: Auto-switch to next step
-            if (mode === 'pickup') {
-                setMode('drop'); 
+            // Only allow clicking if a setter function is actually provided
+            if (setLocation) {
+                const { lat, lng } = e.latlng;
+                setLocation({ lat, lng });
+                
+                // UX: Auto-switch to next step
+                if (mode === 'pickup' && setMode) {
+                    setMode('drop'); 
+                }
             }
         },
     });
     return null;
 }
 
-// Component to fly to user's location
+// 2. Handle "Locate Me"
 function LocateUser({ trigger }) {
     const map = useMap();
     useEffect(() => {
         if (trigger) {
             map.locate().on("locationfound", function (e) {
-                map.flyTo(e.latlng, map.getZoom());
+                map.flyTo(e.latlng, 14);
             });
         }
     }, [trigger, map]);
+    return null;
+}
+
+// 3. NEW: Auto-Zoom to fit route (Portfolio Polish)
+function FitBounds({ pickup, drop }) {
+    const map = useMap();
+    useEffect(() => {
+        if (pickup && drop) {
+            const bounds = L.latLngBounds(
+                [pickup.lat, pickup.lng],
+                [drop.lat, drop.lng]
+            );
+            map.fitBounds(bounds, { padding: [50, 50] });
+        }
+    }, [pickup, drop, map]);
     return null;
 }
 
@@ -58,13 +75,18 @@ const MapComponent = ({ pickup, drop, setPickup, setDrop }) => {
     const [selectionMode, setSelectionMode] = useState('pickup'); 
     const [locateTrigger, setLocateTrigger] = useState(0);
 
+    // If setters are passed as empty functions (read-only mode), hide controls
+    // We check if the function name is likely a real state setter or dummy
+    // A simple heuristic: if we are in "Active Ride" mode, we usually don't want to edit.
+    // For MVP, we will show controls if setPickup is provided, but we can rely on the parent logic.
+    
     // Simple visual line between points
     const routeLine = (pickup && drop) 
         ? [[pickup.lat, pickup.lng], [drop.lat, drop.lng]] 
         : [];
 
     return (
-        <div className="w-full h-96 rounded-lg overflow-hidden shadow-lg border-2 border-gray-100 relative">
+        <div className="w-full h-full min-h-[400px] rounded-lg overflow-hidden shadow-lg border-2 border-gray-100 relative z-0">
             {/* Control Panel Overlay */}
             <div className="absolute top-4 right-4 z-[1000] flex flex-col gap-2">
                 <div className="bg-white p-2 rounded-lg shadow-md flex flex-col gap-2">
@@ -82,7 +104,6 @@ const MapComponent = ({ pickup, drop, setPickup, setDrop }) => {
                     </button>
                 </div>
                 
-                {/* Locate Me Button */}
                 <button 
                     onClick={() => setLocateTrigger(t => t + 1)}
                     className="bg-white p-2 rounded-lg shadow-md text-slate-700 font-bold text-sm hover:bg-slate-50"
@@ -98,6 +119,7 @@ const MapComponent = ({ pickup, drop, setPickup, setDrop }) => {
                 />
                 
                 <LocateUser trigger={locateTrigger} />
+                <FitBounds pickup={pickup} drop={drop} />
 
                 {/* Logic to capture clicks */}
                 <LocationSelector 
@@ -106,7 +128,7 @@ const MapComponent = ({ pickup, drop, setPickup, setDrop }) => {
                     setLocation={selectionMode === 'pickup' ? setPickup : setDrop} 
                 />
 
-                {/* Visual Markers with Custom Icons */}
+                {/* Visual Markers */}
                 {pickup && (
                     <Marker position={[pickup.lat, pickup.lng]} icon={leafGreen}>
                         <Popup>Pickup Location</Popup>
@@ -119,7 +141,7 @@ const MapComponent = ({ pickup, drop, setPickup, setDrop }) => {
                 )}
 
                 {/* Route Line */}
-                {routeLine.length > 0 && <Polyline positions={routeLine} color="#3b82f6" weight={4} opacity={0.7} />}
+                {routeLine.length > 0 && <Polyline positions={routeLine} color="#3b82f6" weight={4} opacity={0.7} dashArray="10, 10" />}
             </MapContainer>
         </div>
     );

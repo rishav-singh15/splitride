@@ -32,7 +32,6 @@ const DriverActiveRide = () => {
         });
         
         socket.on('new_ride_request', (newRide) => {
-           // Optional: Show a toast notification here
            console.log("New ride available:", newRide);
         });
     }
@@ -45,21 +44,26 @@ const DriverActiveRide = () => {
   // --- ACTIONS ---
 
   const verifyOtpAndStart = async () => {
+    // 1. Local Validation
     if (otpInput !== ride.safety?.otp) {
         setError("Invalid OTP. Ask passenger for code.");
         return;
     }
-    // In a real app, you'd have a specific API endpoint for this. 
-    // For MVP, we assume OTP match allows starting.
-    // Let's just update the status to ongoing if it isn't already.
-    if (ride.status === 'scheduled' || ride.status === 'searching') {
-        try {
-            await api.post(`/rides/${ride._id}/accept`, { baseFare: ride.pricing.baseFare });
-            setError("");
-            alert("OTP Verified! Ride Started.");
-        } catch (err) {
-            setError(err.message);
-        }
+
+    try {
+        // 2. Server Validation (Using Accept endpoint to re-confirm/start)
+        // Note: Ideally, we'd have a specific /verify-otp endpoint in Phase 2
+        await api.post(`/rides/${ride._id}/accept`, { 
+            baseFare: ride.pricing.baseFare,
+            isVerified: true // Signal backend to update verification
+        });
+        
+        setError("");
+        // Optimistic UI update
+        setRide(prev => ({...prev, safety: { ...prev.safety, isVerified: true }}));
+        alert("OTP Verified! Ride Started.");
+    } catch (err) {
+        setError(err.message || "Verification failed");
     }
   };
 
@@ -75,23 +79,33 @@ const DriverActiveRide = () => {
 
   if (loading) return <div className="p-10 text-center">Loading Driver Dashboard...</div>;
   if (!ride) return (
-    <div className="flex flex-col items-center justify-center h-96 bg-white rounded-xl shadow-sm border border-slate-200">
+    <div className="flex flex-col items-center justify-center h-96 bg-white rounded-xl shadow-sm border border-slate-200 m-4">
         <Navigation size={48} className="text-slate-300 mb-4" />
         <h3 className="text-xl font-bold text-slate-700">No Active Ride</h3>
         <p className="text-slate-500">Wait for requests in the Dashboard.</p>
     </div>
   );
 
-  // --- MAP COORDINATES ---
-  // Ensure we handle the nested object safely to prevent Error #31
-  const startCoords = ride.route.start.location?.coordinates || ride.route.start.coordinates;
-  const endCoords = ride.route.end.location?.coordinates || ride.route.end.coordinates;
-  
-  const mapPickup = startCoords ? { lat: startCoords[1], lng: startCoords[0] } : null;
-  const mapDrop = endCoords ? { lat: endCoords[1], lng: endCoords[0] } : null;
+  // --- MAP COORDINATES (GeoJSON Safe Parsing) ---
+  const getCoords = (point) => {
+      if (point?.location?.coordinates) return point.location.coordinates;
+      if (point?.coordinates) return point.coordinates;
+      return null;
+  };
+
+  const startArr = getCoords(ride.route?.start);
+  const endArr = getCoords(ride.route?.end);
+
+  // Leaflet expects {lat, lng}, MongoDB gives [lng, lat]
+  const mapPickup = startArr ? { lat: startArr[1], lng: startArr[0] } : null;
+  const mapDrop = endArr ? { lat: endArr[1], lng: endArr[0] } : null;
+
+  // Check if Verification is needed (Show OTP if NOT verified)
+  // If backend doesn't support isVerified yet, we fallback to showing it if status is 'scheduled'
+  const needsVerification = !ride.safety?.isVerified;
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="max-w-4xl mx-auto space-y-6 p-4">
       
       {/* HEADER STATUS */}
       <div className="bg-slate-900 text-white p-6 rounded-xl shadow-lg flex justify-between items-center">
@@ -120,20 +134,20 @@ const DriverActiveRide = () => {
                     <Navigation size={18} /> Route Details
                  </h3>
                  
-                 {/* 🛑 FIX FOR ERROR #31: Access .name property */}
+                 {/* 🛑 ERROR #31 FIX: Accessed .name explicitly */}
                  <div className="relative pl-6 border-l-2 border-slate-200 space-y-6">
                      <div className="relative">
                          <span className="absolute -left-[31px] w-4 h-4 rounded-full bg-emerald-500 border-2 border-white"></span>
                          <p className="text-xs text-slate-400 font-bold uppercase">Pickup</p>
                          <p className="font-medium text-slate-800">
-                            {ride.route.start.name} 
+                            {ride.route?.start?.name || "Pickup Location"} 
                          </p>
                      </div>
                      <div className="relative">
                          <span className="absolute -left-[31px] w-4 h-4 rounded-full bg-red-500 border-2 border-white"></span>
                          <p className="text-xs text-slate-400 font-bold uppercase">Drop</p>
                          <p className="font-medium text-slate-800">
-                            {ride.route.end.name}
+                            {ride.route?.end?.name || "Drop Location"}
                          </p>
                      </div>
                  </div>
@@ -143,8 +157,8 @@ const DriverActiveRide = () => {
           {/* RIGHT: PASSENGERS & ACTIONS */}
           <div className="space-y-6">
               
-              {/* OTP VERIFICATION (PHASE 2) */}
-              {ride.status === 'scheduled' || ride.status === 'searching' ? (
+              {/* OTP VERIFICATION CARD */}
+              {needsVerification ? (
                   <div className="bg-indigo-50 border border-indigo-100 p-6 rounded-xl">
                       <h3 className="font-bold text-indigo-900 mb-2 flex items-center gap-2">
                           <ShieldAlert size={18} /> Verify Passenger
@@ -181,29 +195,29 @@ const DriverActiveRide = () => {
               {/* PASSENGER LIST */}
               <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
                   <h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2">
-                      <Users size={18} /> Passengers ({ride.passengers.length})
+                      <Users size={18} /> Passengers ({ride.passengers?.length || 0})
                   </h3>
                   <div className="space-y-3">
-                      {ride.passengers.map((p, idx) => (
+                      {ride.passengers?.map((p, idx) => (
                           <div key={idx} className="flex justify-between items-center p-3 bg-slate-50 rounded-lg">
                               <div className="flex items-center gap-3">
                                   <div className="w-8 h-8 bg-slate-200 rounded-full flex items-center justify-center text-xs font-bold text-slate-600">
                                       {idx + 1}
                                   </div>
                                   <div>
-                                      {/* 🛑 FIX: Access .name explicitly */}
-                                      <p className="font-medium text-sm text-slate-800">{p.user?.name || "Passenger"}</p>
+                                      {/* 🛑 Safe Access for User Name */}
+                                      <p className="font-medium text-sm text-slate-800">{p.user?.name || p.name || "Passenger"}</p>
                                       <p className="text-xs text-slate-500">Seat {p.seatNumber}</p>
                                   </div>
                               </div>
-                              <span className="font-mono font-bold text-slate-700">₹{p.fareShare.toFixed(0)}</span>
+                              <span className="font-mono font-bold text-slate-700">₹{p.fareShare?.toFixed(0) || 0}</span>
                           </div>
                       ))}
                   </div>
               </div>
 
               {/* END RIDE BUTTON */}
-              {ride.status === 'ongoing' && (
+              {!needsVerification && (
                   <button 
                     onClick={completeRide}
                     className="w-full py-4 bg-red-500 hover:bg-red-600 text-white font-bold rounded-xl shadow-lg transition-all"

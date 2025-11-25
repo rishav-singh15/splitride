@@ -29,6 +29,7 @@ exports.recalculateFares = (ride) => {
 
   // 1. Calculate individual distances
   ride.passengers.forEach(p => {
+    // Safe navigation to prevent crashes on bad data
     if (p.pickup?.coordinates && p.drop?.coordinates) {
         // coordinates are [lng, lat], so index 1 is lat, 0 is lng
         const dist = calculateDistance(
@@ -128,7 +129,6 @@ exports.createRide = async (req, res) => {
 // --- 2. GET AVAILABLE RIDES ---
 exports.getAvailableRides = async (req, res) => {
   try {
-    // Phase 2: We can eventually filter by location using $nearSphere here
     const rides = await Ride.find({ status: 'searching' })
       .populate('passengers.user', 'name')
       .sort({ createdAt: -1 });
@@ -144,7 +144,7 @@ exports.getRideById = async (req, res) => {
     const ride = await Ride.findById(req.params.id)
       .populate('driver', 'name vehicle')
       .populate('passengers.user', 'name phone')
-      .populate('approvals.user', 'name'); // Populate approvals to show names in UI
+      .populate('approvals.user', 'name'); 
       
     if (!ride) return res.status(404).json({ error: 'Ride not found' });
     res.json(ride);
@@ -175,7 +175,7 @@ exports.acceptRide = async (req, res) => {
     
     // Notify Passenger 1
     if (ride.passengers[0]) {
-        io.to(ride.passengers[0].user.toString()).emit('ride_accepted', { ride });
+        io.to(ride.passengers[0].user.toString()).emit('ride_accepted', { ride, baseFare });
     }
 
     res.json({ success: true, ride });
@@ -194,7 +194,6 @@ exports.requestJoinRide = async (req, res) => {
     const ride = await Ride.findById(rideId);
     if (!ride) return res.status(404).json({ error: 'Ride not found' });
 
-    // Check if already in approvals or passengers
     const exists = ride.passengers.some(p => p.user.toString() === userId) ||
                    ride.approvals.some(a => a.user.toString() === userId);
     
@@ -269,7 +268,7 @@ exports.approveJoinRequest = async (req, res) => {
 
     // 4. Notify Everyone
     const io = req.app.get('io');
-    const newUser = await User.findById(requesterId); // Get name for notification
+    const newUser = await User.findById(requesterId); 
 
     io.to(rideId).emit('ride_updated', ride);
     
@@ -298,7 +297,7 @@ exports.getActiveRide = async (req, res) => {
     })
     .populate('driver')
     .populate('passengers.user', 'name')
-    .populate('approvals.user', 'name'); // Important for UI to see who is waiting
+    .populate('approvals.user', 'name');
     res.json(ride);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -328,6 +327,5 @@ exports.completeRide = async (req, res) => {
     }
 };
 
-// Legacy support
 exports.getSearchingRides = exports.getAvailableRides;
 exports.getJoinableRides = exports.getAvailableRides;

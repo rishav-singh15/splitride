@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api'; 
 import MapComponent from './MapComponent'; 
-import { MapPin, Navigation, Clock, CreditCard, AlertCircle } from 'lucide-react'; 
+import { Navigation, Clock, CreditCard, AlertCircle } from 'lucide-react'; 
 
 const BookRideForm = () => {
   const navigate = useNavigate();
@@ -31,10 +31,11 @@ const BookRideForm = () => {
 
     try {
       // 2. DATA FORMATTING (Matching Backend Schema)
+      // MongoDB expects [Longitude, Latitude]
       const rideData = {
         pickup: {
           name: "Pinned Location", 
-          coordinates: [pickupCoords.lng, pickupCoords.lat] // GeoJSON [lng, lat]
+          coordinates: [pickupCoords.lng, pickupCoords.lat] 
         },
         drop: {
           name: "Destination",
@@ -45,7 +46,6 @@ const BookRideForm = () => {
       };
 
       // 3. API CALL
-      // Using /rides/create which maps to createRide in controller
       const response = await api.post('/rides/create', rideData);
       
       if (response.data.success) {

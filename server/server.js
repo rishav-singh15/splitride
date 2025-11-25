@@ -8,66 +8,65 @@ require('dotenv').config();
 const app = express();
 const server = http.createServer(app);
 
-// --- NEW CORS CONFIG ---
-const allowedOrigins = [
-  "http://localhost:5173",
-  "https://splitride-six.vercel.app" // Your live Vercel frontend
-];
-
-const corsOptions = {
-  origin: function (origin, callback) {
-    if (allowedOrigins.indexOf(origin) !== -1 || !origin) {
-      // Allow requests from allowed origins and "no-origin" (like Postman)
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  methods: ["GET", "POST", "PUT", "DELETE"] // Allow all necessary methods
-};
-
+// --- SOCKET.IO CONFIGURATION ---
 const io = socketIo(server, {
-  cors: corsOptions // Apply the same CORS options to Socket.IO
+  cors: {
+    // Allow connections from your Frontend (Local + Production)
+    origin: [
+      "http://localhost:5173", 
+      "https://splitride-six.vercel.app", 
+      "https://splitride.vercel.app" 
+    ],
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    credentials: true
+  }
 });
-// --- END OF NEW CONFIG ---
 
-// --- Middleware ---
-app.use(cors(corsOptions)); // Apply CORS options to all Express routes
-app.use(express.json()); // To parse JSON bodies
+// --- MIDDLEWARE ---
+app.use(cors({
+  origin: [
+    "http://localhost:5173", 
+    "https://splitride-six.vercel.app",
+    "https://splitride.vercel.app"
+  ],
+  credentials: true
+}));
+app.use(express.json());
 
-// --- MongoDB Connection ---
+// --- DATABASE CONNECTION ---
 mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log('MongoDB Connected...'))
-  .catch(err => console.error(err));
+  .then(() => console.log('✅ MongoDB Connected'))
+  .catch(err => console.error('❌ MongoDB Connection Error:', err));
 
-// --- Routes ---
-app.use('/api/auth', require('./routes/auth'));
-app.use('/api/rides', require('./routes/rides'));
-app.use('/api/notifications', require('./routes/notifications'));
-
-// --- Socket.io Connection ---
+// --- SOCKET.IO EVENTS ---
 io.on('connection', (socket) => {
-  console.log('New user connected:', socket.id);
-  
+  console.log('⚡ New Client Connected:', socket.id);
+
+  // Join a specific room (e.g., for a specific ride)
   socket.on('join_ride', (rideId) => {
     socket.join(rideId);
-    console.log(`Socket ${socket.id} joined ride room ${rideId}`);
+    console.log(`Socket ${socket.id} joined ride room: ${rideId}`);
   });
 
-  socket.on('join_user_room', (userId) => {
+  // Join user's private room (for personal notifications)
+  socket.on('join_user', (userId) => {
     socket.join(userId);
-    console.log(`SUCCESS: Socket ${socket.id} joined USER ROOM ${userId}`);
+    console.log(`Socket ${socket.id} joined user room: ${userId}`);
   });
 
   socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
+    console.log('Client Disconnected:', socket.id);
   });
 });
 
-// Make 'io' accessible to our routes
+// Make 'io' accessible in Controllers via req.app.get('io')
 app.set('io', io);
 
-// --- Start Server ---
-// Render will set its own PORT environment variable
-const PORT = process.env.PORT || 5001; 
-server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+// --- ROUTES ---
+app.use('/api/auth', require('./routes/auth'));
+app.use('/api/rides', require('./routes/rides'));
+app.use('/api/notifications', require('./routes/notifications')); // New Route
+
+// --- SERVER START ---
+const PORT = process.env.PORT || 5000;
+server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
