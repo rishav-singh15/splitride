@@ -458,3 +458,26 @@ exports.recalculateFares = (ride) => {
 
     return ride;
 };
+exports.getAvailableRides = async (req, res) => {
+  try {
+    const rides = await Ride.find({ status: 'searching' })
+      .populate('passengers.user', 'name') // Get passenger names
+      .sort({ createdAt: -1 }); // Newest first
+    res.json(rides);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.getRideById = async (req, res) => {
+  try {
+    const ride = await Ride.findById(req.params.id)
+      .populate('driver', 'name vehicle') // Get driver details
+      .populate('passengers.user', 'name phone'); // Get passenger details
+      
+    if (!ride) return res.status(404).json({ error: 'Ride not found' });
+    res.json(ride);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};

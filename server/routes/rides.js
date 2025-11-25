@@ -1,32 +1,38 @@
 const express = require('express');
 const router = express.Router();
 const rideController = require('../controllers/rideController');
-const auth = require('../middleware/auth'); // <--- Import auth
+const auth = require('../middleware/auth');
 
-// --- We will add 'auth' middleware to all routes ---
+// --- 1. NEW ROUTES (Required for the Fixes) ---
+
+// Get all rides waiting for a driver (For JoinableRidesList.jsx)
+router.get('/available', auth, rideController.getAvailableRides);
+
+// Get a specific ride by ID (For ActiveRideDisplay.jsx & DriverActiveRide.jsx)
+// 🚨 IMPORTANT: This must be placed AFTER specific routes like /available, /searching, etc.
+// If placed before, it would trap "available" as an "id"
+router.get('/:id', auth, rideController.getRideById); 
+
+
+// --- 2. EXISTING ROUTES (Kept from your code) ---
 
 // @route   POST api/rides/create
-// @desc    Passenger creates a new ride request
-// @access  Private
-router.post('/create', auth, rideController.createRide); // <--- Add auth
+router.post('/create', auth, rideController.createRide);
 
 // @route   POST api/rides/accept/:rideId
-// @desc    Driver accepts a ride and sets pricing
-// @access  Private
-router.post('/accept/:rideId', auth, rideController.acceptRide); // <--- Add auth
+router.post('/accept/:rideId', auth, rideController.acceptRide);
 
 // @route   POST api/rides/join/:rideId
-// @desc    Passenger requests to join an existing shared ride
-// @access  Private
-router.post('/join/:rideId', auth, rideController.requestJoinRide); // <--- Add auth
+router.post('/join/:rideId', auth, rideController.requestJoinRide);
 
 // @route   POST api/rides/approve/:rideId/:requesterId
-// @desc    Existing passenger approves/rejects a join request
-// @access  Private
-router.post('/approve/:rideId/:requesterId', auth, rideController.approveJoinRequest); // <--- Add auth
+router.post('/approve/:rideId/:requesterId', auth, rideController.approveJoinRequest);
+
+// Legacy/Other Routes (Kept safe)
 router.get('/searching', auth, rideController.getSearchingRides);
 router.get('/active', auth, rideController.getActiveRide);
 router.get('/joinable', auth, rideController.getJoinableRides);
 router.get('/active-driver', auth, rideController.getActiveDriverRide);
 router.post('/complete/:rideId', auth, rideController.completeRide);
+
 module.exports = router;
